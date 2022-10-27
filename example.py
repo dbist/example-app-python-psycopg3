@@ -8,6 +8,8 @@ import os
 import random
 import time
 import uuid
+import requests
+import json
 from argparse import ArgumentParser, RawTextHelpFormatter
 
 import psycopg
@@ -114,13 +116,51 @@ def main():
         # DATABASE_URL environment variable.
         # For information on supported connection string formats, see
         # https://www.cockroachlabs.com/docs/stable/connect-to-the-database.html.
-        db_url = opt.dsn
-        conn = psycopg.connect(db_url, 
-                               application_name="$ docs_simplecrud_psycopg3", 
-                               row_factory=namedtuple_row)
+
+        client_id = opt.client_id
+        client_secret = opt.client_secret
+        username = opt.username
+        password = opt.password
+
+        url = 'https://dev-53201841.okta.com/oauth2/v1/token'
+        headers = {'Content-Type': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'}
+        data='grant_type=password&username=' + username + '&password=' + password + '&scope=openid offline_access'
+
+        # capture the id_token and use it in the psycopg connection, we must include the options flag
+        json_response = get_id_token(url, data, headers, client_id, client_secret)
+        id_token = json_response["id_token"]
+        refresh_token = json_response["refresh_token"]
+
+        print()
+        print("Initiate authentication with a new id_token:")
+        execute_workload(id_token)
+
+        data = "grant_type=refresh_token&scope=openid offline_access&refresh_token=" + refresh_token
+
+        json_refresh_response = get_refresh_token(url, data, headers, client_id, client_secret)
+        new_id_token = json_refresh_response["id_token"]
+
+        print()
+        print("Initiate authentication with a refreshed id_token:")
+        execute_workload(new_id_token)
+
+        print()
+        print("Initiate authentication with a bogus id_token:")
+        execute_workload("bogus")
+
+    except Exception as e:
+        logging.fatal("database connection failed")
+        logging.fatal(e)
+        return
+
+def execute_workload(id_token):
+    with psycopg.connect("host=lb dbname=defaultdb user=roach password={} port=26257 sslmode=verify-full sslrootcert=/certs/ca.crt options=--crdb:jwt_auth_enabled=true".format(id_token),
+                               application_name="$ using_jwt_token_psycopg3",
+                               row_factory=namedtuple_row) as conn:
+
         ids = create_accounts(conn)
         print_balances(conn)
-            
+
         amount = 100
         toId = ids.pop()
         fromId = ids.pop()
@@ -131,19 +171,25 @@ def main():
             # Below, we print the error and continue on so this example is easy to
             # run (and run, and run...).  In real code you should handle this error
             # and any others thrown by the database interaction.
-            logging.debug("run_transaction(conn, op) failed: %s", ve)
-            pass
+                logging.debug("run_transaction(conn, op) failed: %s", ve)
+                pass
         except psycopg.Error as e:
-            logging.debug("got error: %s", e)
-            raise e
+                logging.debug("got error: %s", e)
+                raise e
 
         print_balances(conn)
 
         delete_accounts(conn)
-    except Exception as e:
-        logging.fatal("database connection failed")
-        logging.fatal(e)
-        return
+
+
+def get_id_token(url, data, headers, client_id, client_secret):
+    r = requests.post(url, data, headers=headers, auth=(client_id, client_secret))
+    return json.loads(r.text)
+
+
+def get_refresh_token(url, data, headers, client_id, client_secret):
+    r = requests.post(url, data, headers=headers, auth=(client_id, client_secret))
+    return json.loads(r.text)
 
 
 def parse_cmdline():
@@ -154,18 +200,54 @@ def parse_cmdline():
                         action="store_true", help="print debug info")
 
     parser.add_argument(
-        "dsn",
-        default=os.environ.get("DATABASE_URL"),
+        "client_id",
+        default=os.environ.get("CLIENT_ID"),
         nargs="?",
         help="""\
-database connection string\
- (default: value of the DATABASE_URL environment variable)
+Okta Client ID\
+ (default: value of the CLIENT_ID environment variable)
+            """,
+    )
+
+    parser.add_argument(
+        "client_secret",
+        default=os.environ.get("CLIENT_SECRET"),
+        nargs="?",
+        help="""\
+Okta Client Secret\
+ (default: value of the SECRET environment variable)
+            """,
+    )
+
+    parser.add_argument(
+        "username",
+        default=os.environ.get("OKTAUSERNAME"),
+        nargs="?",
+        help="""\
+Okta Username\
+ (default: value of the OKTAUSERNAME environment variable)
+            """,
+    )
+
+    parser.add_argument(
+        "password",
+        default=os.environ.get("OKTAPASSWORD"),
+        nargs="?",
+        help="""\
+Okta Password\
+ (default: value of the OKTAPASSWORD environment variable)
             """,
     )
 
     opt = parser.parse_args()
-    if opt.dsn is None:
-        parser.error("database connection string not set")
+    if opt.client_id is None:
+        parser.error("Okta Client ID is not set")
+    elif opt.client_secret is None:
+        parser.error("Okta Client Secret is not set")
+    elif opt.username is None:
+        parser.error("Okta Username is not set")
+    elif opt.password is None:
+        parser.error("Okta Password is not set")
     return opt
 
 
