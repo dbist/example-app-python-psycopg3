@@ -137,7 +137,7 @@ def main():
 
         data = "grant_type=refresh_token&scope=openid offline_access&refresh_token=" + refresh_token
 
-        json_refresh_response = get_refresh_token(url, data, headers, client_id, client_secret)
+        json_refresh_response = get_id_token(url, data, headers, client_id, client_secret)
         new_id_token = json_refresh_response["id_token"]
 
         print()
@@ -183,11 +183,6 @@ def execute_workload(id_token):
 
 
 def get_id_token(url, data, headers, client_id, client_secret):
-    r = requests.post(url, data, headers=headers, auth=(client_id, client_secret))
-    return json.loads(r.text)
-
-
-def get_refresh_token(url, data, headers, client_id, client_secret):
     r = requests.post(url, data, headers=headers, auth=(client_id, client_secret))
     return json.loads(r.text)
 
@@ -265,3 +260,4 @@ Okta Password\
 
 if __name__ == "__main__":
     main()
+
