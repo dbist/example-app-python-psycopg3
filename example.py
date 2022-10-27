@@ -121,8 +121,8 @@ def main():
         client_secret = opt.client_secret
         username = opt.username
         password = opt.password
+        url = opt.url
 
-        url = 'https://dev-53201841.okta.com/oauth2/v1/token'
         headers = {'Content-Type': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'}
         data='grant_type=password&username=' + username + '&password=' + password + '&scope=openid offline_access'
 
@@ -200,6 +200,16 @@ def parse_cmdline():
                         action="store_true", help="print debug info")
 
     parser.add_argument(
+        "url",
+        default=os.environ.get("OKTAURL"),
+        nargs="?",
+        help="""\
+Okta URL\
+ (default: value of the OKTALURL environment variable)
+            """,
+    )
+
+    parser.add_argument(
         "client_id",
         default=os.environ.get("CLIENT_ID"),
         nargs="?",
@@ -248,6 +258,8 @@ Okta Password\
         parser.error("Okta Username is not set")
     elif opt.password is None:
         parser.error("Okta Password is not set")
+    elif opt.url is None:
+        parser.error("Okta Url is not set")
     return opt
 
 
